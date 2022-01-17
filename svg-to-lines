@@ -1,0 +1,169 @@
+#!/usr/bin/env python
+# Output SVG outlines to LCD or TTY
+# Copyright 2022, jaggz.h  who's at gmail dot com
+# GPL2 or later
+# ^ The law should make that sufficient
+import numpy as np
+import ipdb
+from bh.bansi import *
+from bh.util import *
+import bh.kbnb as kbnb
+from bresenham import bresenham
+import argparse
+import ipdb
+import sys
+import os
+from random import randint
+
+from svgpathtools import svg2paths, wsvg
+
+out_term=True
+out_lcd=False
+args=None
+
+lcdwh = (320,240)   # this is our lcd width and height
+termwh = None       # assigned later
+max_query_len=255
+
+def getargs():
+	parser = argparse.ArgumentParser(description="Output SVG outlines to LCD or TTY")
+	parser.add_argument("-t", "--tty", help="Output to stdout",
+						action="store_true")
+	parser.add_argument("-L", "--lcd", help="Don't output to LCD",
+						action="store_false")
+	parser.add_argument("-v", "--verbose", action="count",
+						default=0, help="Increase output verbosity")
+	parser.add_argument("-p", "--pause", action="store_true",
+						help="Pause at end of output")
+	parser.add_argument("file", nargs='*', help="file.svg")
+	return parser.parse_args()
+
+def lcdline(x1=None, x2=None, y1=None, y2=None, color=None):
+	x1, y1, x2, y2 = list([round(i) for i in (x1, y1, x2, y2)])
+	cmd = f"line=x1={x1},y1={y1},x2={x2},y2={y2}"
+	if color is not None:
+		cmd += "," + color
+	return cmd
+
+def sline(x1=None, x2=None, y1=None, y2=None):
+	# The bresenham(x0, y0, x1, y1) function returns a generator of the coordinates of the line from (x0, y0) to (x1, y1).
+	# For example, the coordinates of a line from (-1, -4) to (3, 2), are:
+	# >>> from bresenham import bresenham
+	# >>> list(bresenham(-1, -4, 3, 2))
+	# [(-1, -4), (0, -3), (0, -2), (1, -1), (2, 0), (2, 1), (3, 2)]
+	x1, y1, x2, y2 = list([round(i) for i in (x1, y1, x2, y2)])
+	bresies = list(bresenham(x1, y1, x2, y2))
+	for xy in bresies:
+		gxy(xy[0], xy[1])
+		pfpl("*")
+		# ipdb.set_trace()
+
+def map_to_xy(bbox=None, x=None, y=None, outwh=None):
+	x1,x2,y1,y2 = bbox
+	if x2-x1 == 0: sx = x # Don't divide by 0
+	else:          sx = outwh[0] * ((x-x1) / (x2-x1))
+	if y2-y1 == 0: sy = y
+	else:          sy = outwh[1] * ((y-y1) / (y2-y1))
+	if args.verbose:
+		print(f"point x,y: {x},{y}")
+		print(f"x1,2 y1,2: {x1},{x2}, {y1},{y2}")
+		print(f"outwh[0,1] = {outwh[0]},{outwh[1]}")
+		print(f" -> sx,sy = {sx},{sy}")
+	return sx,sy
+
+def randrgb():
+	return [randint(125,255) for i in (1,2,3)]
+
+def plotsvgfile(file=None, scale=1.0):
+	global termwh
+	paths, attributes = svg2paths(file)
+	if args.tty:
+		# >>> os.get_terminal_size()
+		# os.terminal_size(columns=104, lines=33)
+		termwh = os.get_terminal_size()
+		termwh = (termwh.columns, termwh.lines)
+		# print(f"Screen columns, lines: {termwh[0]}, {termwh[1]}")
+		# sys.exit()
+		cls()
+# ipdb> path.bbox()
+# (0.0003903752561456031, 217.40760962474386, 10.333999999999978, 207.07399999999998)
+	lastcmd = None
+	clear = False
+	#for scale in np.arange(.25, 1, .1):
+	for scale in 1,:
+	# for scale in .5,:
+		for pathi,path in enumerate(paths):
+			lastsx = lastsy = None
+			tlastsx = tlastsy = None
+			bbox = path.bbox()
+			# print("Bounding box:", bbox)
+			x1,x2,y1,y2 = bbox
+			pathcmds = []
+			cr,cg,cb = randrgb()
+			cr,cg,cb = 255,0,0
+			ccc = a24fg(cr, cg, cb)
+			if args.tty:
+				print(ccc)
+			pathcmds.append(f'col=r={cr},g={cg},b={cb}')
+			lastparti = -1
+			for parti,part in enumerate(path):
+				# if parti != lastparti:
+				# 	cr,cg,cb = randrgb()
+				# 	cr,cg,cb = 255,0,0
+				# 	ccc = a24fg(cr, cg, cb)
+				# 	if args.tty:
+				# 		print(ccc)
+				# 	lastparti = parti
+				for i in np.arange(0, 1, 1):
+					pt = part.point(i)
+					x,y = pt.real, pt.imag
+					# ipdb.set_trace()
+					# print(f"{pathi}.{parti} {pt}  Values: {x}, {y}")
+					if args.tty is True:
+						tsx,tsy = map_to_xy(bbox=bbox, x=x, y=y, outwh=termwh)
+						tsx = int(tsx * scale)
+						tsy = int(tsy * scale)
+						if tlastsx is not None:
+							sline(x1=tlastsx, x2=tsx, y1=tlastsy, y2=tsy)
+						tlastsx,tlastsy = tsx,tsy
+					elif args.lcd is True:
+						sx,sy = map_to_xy(bbox=bbox, x=x, y=y, outwh=lcdwh)
+						sx = int(sx * scale)
+						sy = int(sy * scale)
+						# print(f"  -> {sx}, {sy}")
+						if lastsx is not None:
+							pathcmds.append(lcdline(x1=lastsx, x2=sx, y1=lastsy, y2=sy))
+						lastsx,lastsy = sx,sy
+			if args.lcd:
+				st=0
+				for i in range(st, len(pathcmds)):
+					cmd = '&'.join(pathcmds[st:i+1])
+					if len(cmd) > max_query_len:  # Will exceed max
+						cmd = '&'.join(pathcmds[st:i])
+						if i == st: # ONE command is too big?
+							print("Single command too big!", file=sys.stderr)
+						else:
+							# fullcmd=f'col=r=0&{cmd}'
+							# fullcmd=f'col=r=255&{cmd}'
+							fullcmd=cmd
+							os.system(f"livmsg-manual '{fullcmd}'")
+						st = i  # Set new start
+
+def main():
+	global args
+	args = getargs()
+	print("tty:", args.tty)
+	print("lcd:", args.lcd)
+	if not args.tty and not args.lcd:
+		print("No output specified (did you do -L to disable LCD, but not pick -t for tty?)",
+				file = sys.stderr)
+		import time
+		time.sleep(1)
+	# sys.exit()
+	if args.pause: kbnb.init()
+	for f in args.file: plotsvgfile(f, scale=1)
+	gy(termwh[1]-1)
+	if args.pause:
+		kbnb.waitkey(prompt="")
+
+main()
