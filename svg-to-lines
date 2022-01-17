@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-# Output SVG outlines to LCD or TTY
+# Converts SVG to outlines (using paths obtained by
+# svgpathtools), then displays them as line-segments
+# (using bresenham line drawing).
+
+# It displays by default to my LCD, but this can be
+# disabled (-L).  It can also display in text
+# to the terminal (-t)
+
 # Copyright 2022, jaggz.h  who's at gmail dot com
 # GPL2 or later
 # ^ The law should make that sufficient
