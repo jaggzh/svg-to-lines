@@ -21,6 +21,7 @@ import ipdb
 import sys
 import os
 from random import randint
+from time import sleep
 
 from svgpathtools import svg2paths, wsvg
 
@@ -66,7 +67,7 @@ def sline(x1=None, x2=None, y1=None, y2=None):
 		# ipdb.set_trace()
 
 def map_to_xy(bbox=None, x=None, y=None, outwh=None):
-	x1,x2,y1,y2 = bbox
+	x1,y1,x2,y2 = bbox
 	if x2-x1 == 0: sx = x # Don't divide by 0
 	else:          sx = outwh[0] * ((x-x1) / (x2-x1))
 	if y2-y1 == 0: sy = y
@@ -81,9 +82,19 @@ def map_to_xy(bbox=None, x=None, y=None, outwh=None):
 def randrgb():
 	return [randint(125,255) for i in (1,2,3)]
 
+def get_attr_style(attrstr, attrname):
+	attrstr = attrstr['style']
+	attrdict = dict([sa.split(':') for sa in attrstr.split(';')])
+	return attrdict[attrname]
+
+def hextorgb(s):
+	s = s.lstrip('#')
+	return tuple(int(s[i:i + 2], 16) for i in range(0, 6, 2))
+
+
 def plotsvgfile(file=None, scale=1.0):
 	global termwh
-	paths, attributes = svg2paths(file)
+
 	if args.tty:
 		# >>> os.get_terminal_size()
 		# os.terminal_size(columns=104, lines=33)
@@ -92,6 +103,17 @@ def plotsvgfile(file=None, scale=1.0):
 		# print(f"Screen columns, lines: {termwh[0]}, {termwh[1]}")
 		# sys.exit()
 		cls()
+
+	paths, attrs, svgattrs = svg2paths(file, return_svg_attributes=True)
+	# {'xmlns:inkscape': 'http://www.inkscape.org/namespaces/inkscape', 'xmlns:sodipodi': 'http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd', 'xmlns': 'http://www.w3.org/2000/svg', 'xmlns:svg': 'http://www.w3.org/2000/svg', 'width': '320mm', 'height': '240mm', 'viewBox': '0 0 320 240', 'version': '1.1', 'id': 'svg5', 'inkscape:version': '1.1.1 (3bf5ae0, 2021-09-20)', 'sodipodi:docname': 'stest.svg'}
+	# bbox = x1,y1,x2,y2
+	bbox = [int(s) for s in svgattrs['viewBox'].split()]
+	# print("Bounding box:", bbox)
+
+	# ipdb.set_trace()
+	# ipdb> dl[0]["style"]
+	# 'fill:#008000;fill-rule:evenodd;stroke:#0000ff;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1'
+
 # ipdb> path.bbox()
 # (0.0003903752561456031, 217.40760962474386, 10.333999999999978, 207.07399999999998)
 	lastcmd = None
@@ -100,20 +122,26 @@ def plotsvgfile(file=None, scale=1.0):
 	for scale in 1,:
 	# for scale in .5,:
 		for pathi,path in enumerate(paths):
-			lastsx = lastsy = None
-			tlastsx = tlastsy = None
-			bbox = path.bbox()
-			# print("Bounding box:", bbox)
-			x1,x2,y1,y2 = bbox
-			pathcmds = []
-			cr,cg,cb = randrgb()
-			cr,cg,cb = 255,0,0
+			# lastsx = lastsy = None
+			# tlastsx = tlastsy = None
+			pattrs = attrs[pathi]
+			stroke_col = get_attr_style(pattrs, 'stroke')
+			# print("Stroke:", stroke_col)
+			cr,cg,cb = hextorgb(stroke_col)
 			ccc = a24fg(cr, cg, cb)
+			#bbox = path.bbox()
+			#x1,x2,y1,y2 = bbox
+			pathcmds = []
+			# cr,cg,cb = randrgb()
+			# cr,cg,cb = 255,0,0
 			if args.tty:
 				print(ccc)
 			pathcmds.append(f'col=r={cr},g={cg},b={cb}')
 			lastparti = -1
 			for parti,part in enumerate(path):
+				lastsx = lastsy = None
+				tlastsx = tlastsy = None
+				# sleep(.5)
 				# if parti != lastparti:
 				# 	cr,cg,cb = randrgb()
 				# 	cr,cg,cb = 255,0,0
@@ -121,7 +149,7 @@ def plotsvgfile(file=None, scale=1.0):
 				# 	if args.tty:
 				# 		print(ccc)
 				# 	lastparti = parti
-				for i in np.arange(0, 1, 1):
+				for i in np.linspace(0,1, 5):
 					pt = part.point(i)
 					x,y = pt.real, pt.imag
 					# ipdb.set_trace()
